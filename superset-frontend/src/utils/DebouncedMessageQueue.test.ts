@@ -104,6 +104,26 @@ describe('DebouncedMessageQueue', () => {
       expect(mockCallback).toHaveBeenCalledWith([1, 2, 3]);
     });
 
+    test('should restart the debounce timer when an event is appended during the delay', () => {
+      const mockCallback = jest.fn();
+      const queue = new DebouncedMessageQueue<number>({
+        callback: mockCallback,
+        delayThreshold: 1000,
+      });
+
+      queue.append(1);
+      jest.advanceTimersByTime(600);
+      queue.append(2);
+      jest.advanceTimersByTime(600);
+
+      expect(mockCallback).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(400);
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(mockCallback).toHaveBeenCalledWith([1, 2]);
+    });
+
     test('should split events into successive batches of sizeThreshold', () => {
       const mockCallback = jest.fn();
       const queue = new DebouncedMessageQueue<number>({
