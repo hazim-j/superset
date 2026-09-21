@@ -19,6 +19,14 @@
 
 import DebouncedMessageQueue from './DebouncedMessageQueue';
 
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  jest.useRealTimers();
+});
+
 // eslint-disable-next-line no-restricted-globals -- TODO: Migrate from describe blocks
 describe('DebouncedMessageQueue', () => {
   test('should create a queue with default options', () => {
@@ -64,4 +72,75 @@ describe('DebouncedMessageQueue', () => {
 
     expect(() => queue.append(testEvent)).not.toThrow();
   });
+});
+
+test('should not invoke the callback before delayThreshold elapses', () => {
+  const mockCallback = jest.fn();
+  const queue = new DebouncedMessageQueue<number>({
+    callback: mockCallback,
+    delayThreshold: 100,
+  });
+
+  queue.append(1);
+  jest.advanceTimersByTime(99);
+  expect(mockCallback).not.toHaveBeenCalled();
+
+  jest.advanceTimersByTime(1);
+  expect(mockCallback).toHaveBeenCalledTimes(1);
+});
+
+test('should deliver queued events in insertion order after the delay', () => {
+  const mockCallback = jest.fn();
+  const queue = new DebouncedMessageQueue<number>({
+    callback: mockCallback,
+    delayThreshold: 100,
+  });
+
+  queue.append(1);
+  queue.append(2);
+  queue.append(3);
+  expect(mockCallback).not.toHaveBeenCalled();
+
+  jest.advanceTimersByTime(100);
+  expect(mockCallback).toHaveBeenCalledTimes(1);
+  expect(mockCallback).toHaveBeenCalledWith([1, 2, 3]);
+});
+
+test('should split events into successive batches of sizeThreshold', () => {
+  const mockCallback = jest.fn();
+  const queue = new DebouncedMessageQueue<number>({
+    callback: mockCallback,
+    sizeThreshold: 2,
+    delayThreshold: 100,
+  });
+
+  [1, 2, 3, 4, 5].forEach(n => queue.append(n));
+
+  jest.advanceTimersByTime(100);
+  expect(mockCallback).toHaveBeenCalledTimes(1);
+  expect(mockCallback).toHaveBeenNthCalledWith(1, [1, 2]);
+
+  jest.advanceTimersByTime(100);
+  expect(mockCallback).toHaveBeenCalledTimes(2);
+  expect(mockCallback).toHaveBeenNthCalledWith(2, [3, 4]);
+
+  jest.advanceTimersByTime(100);
+  expect(mockCallback).toHaveBeenCalledTimes(3);
+  expect(mockCallback).toHaveBeenNthCalledWith(3, [5]);
+
+  jest.runAllTimers();
+  expect(mockCallback).toHaveBeenCalledTimes(3);
+  expect(mockCallback.mock.calls.flat(2)).toEqual([1, 2, 3, 4, 5]);
+});
+
+test('should not invoke the callback when triggering an empty queue', () => {
+  const mockCallback = jest.fn();
+  const queue = new DebouncedMessageQueue<number>({
+    callback: mockCallback,
+    delayThreshold: 100,
+  });
+
+  queue.trigger();
+  jest.runAllTimers();
+  expect(mockCallback).not.toHaveBeenCalled();
 });
