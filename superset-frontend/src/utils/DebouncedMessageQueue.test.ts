@@ -21,6 +21,14 @@ import DebouncedMessageQueue from './DebouncedMessageQueue';
 
 // eslint-disable-next-line no-restricted-globals -- TODO: Migrate from describe blocks
 describe('DebouncedMessageQueue', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('should create a queue with default options', () => {
     const queue = new DebouncedMessageQueue();
     expect(queue).toBeDefined();
@@ -63,5 +71,63 @@ describe('DebouncedMessageQueue', () => {
     queue.append(testEvent);
 
     expect(() => queue.append(testEvent)).not.toThrow();
+  });
+
+  test('should not invoke the callback before delayThreshold', () => {
+    const mockCallback = jest.fn();
+    const queue = new DebouncedMessageQueue<number>({
+      callback: mockCallback,
+      delayThreshold: 1000,
+    });
+
+    queue.append(1);
+    jest.advanceTimersByTime(999);
+
+    expect(mockCallback).not.toHaveBeenCalled();
+  });
+
+  test('should deliver queued events in insertion order after the delay', () => {
+    const mockCallback = jest.fn();
+    const queue = new DebouncedMessageQueue<number>({
+      callback: mockCallback,
+      delayThreshold: 1000,
+    });
+
+    queue.append(1);
+    queue.append(2);
+    queue.append(3);
+    jest.advanceTimersByTime(1000);
+
+    expect(mockCallback).toHaveBeenCalledTimes(1);
+    expect(mockCallback).toHaveBeenCalledWith([1, 2, 3]);
+  });
+
+  test('should split events into successive batches of sizeThreshold', () => {
+    const mockCallback = jest.fn();
+    const queue = new DebouncedMessageQueue<number>({
+      callback: mockCallback,
+      sizeThreshold: 2,
+      delayThreshold: 1000,
+    });
+
+    [1, 2, 3, 4, 5].forEach(event => queue.append(event));
+    jest.runAllTimers();
+
+    expect(mockCallback).toHaveBeenCalledTimes(3);
+    expect(mockCallback.mock.calls).toEqual([[[1, 2]], [[3, 4]], [[5]]]);
+    expect(mockCallback.mock.calls.flat(2)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  test('should not invoke the callback when triggering an empty queue', () => {
+    const mockCallback = jest.fn();
+    const queue = new DebouncedMessageQueue<number>({
+      callback: mockCallback,
+      delayThreshold: 1000,
+    });
+
+    queue.trigger();
+    jest.runAllTimers();
+
+    expect(mockCallback).not.toHaveBeenCalled();
   });
 });
